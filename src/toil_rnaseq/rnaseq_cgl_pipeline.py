@@ -254,8 +254,8 @@ def process_sample(job, config, input_tar=None, fastq_ids=None):
 
         # If sample is already a single R1 / R2 fastq
         if command == 'cat' and len(fastqs) == 2:
-            processed_r1 = fastqs[0]
-            processed_r2 = fastqs[1]
+            processed_r1 = job.fileStore.writeGlobalFile(fastqs[0])
+            processed_r2 = job.fileStore.writeGlobalFile(fastqs[1])
         else:
             with open(os.path.join(work_dir, 'R1.fastq'), 'w') as f1:
                 p1 = subprocess.Popen([command] + r1, stdout=f1)
@@ -269,7 +269,7 @@ def process_sample(job, config, input_tar=None, fastq_ids=None):
     else:
         command = 'zcat' if fastqs[0].endswith('.gz') else 'cat'
         if command == 'cat' and len(fastqs) == 1:
-            processed_r1 = fastqs[0]
+            processed_r1 = job.fileStore.writeGlobalFile(fastqs[0])
         else:
             with open(os.path.join(work_dir, 'R1.fastq'), 'w') as f:
                 subprocess.check_call([command] + fastqs, stdout=f)
