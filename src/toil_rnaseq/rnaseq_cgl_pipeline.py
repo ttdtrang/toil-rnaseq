@@ -30,6 +30,8 @@ from toil_lib.urls import download_url_job, s3am_upload
 
 from qc import run_bam_qc
 
+import shutil
+
 schemes = ('http', 'file', 's3', 'ftp', 'gnos')
 
 
@@ -126,7 +128,7 @@ def star_alignment(job, config, r1_id, r2_id=None):
     """
     job.fileStore.logToMaster('Queueing RSEM job for: ' + config.uuid)
     mem = '2G' if config.ci_test else '40G'
-    disk = '2G' if config.ci_test else r1_id.size + r2_id.size + 80530636800  # 75 G for STAR index and tmp files
+    disk = '2G' if config.ci_test else r1_id.size + (0 if r2_id is None else r2_id.size) + 80530636800  # 75 G for STAR index and tmp files
     star = job.addChildJobFn(run_star, r1_id, r2_id, star_index_url=config.star_index,
                              wiggle=config.wiggle, cores=config.cores, memory=mem, disk=disk).rv()
     rsem = job.addFollowOnJobFn(rsem_quantification, config, star, disk=disk).rv()
@@ -173,6 +175,8 @@ def rsem_quantification(job, config, star_output):
         job.fileStore.readGlobalFile(wiggle_id, wiggle_path)
         if urlparse(config.output_dir).scheme == 's3':
             s3am_upload(fpath=wiggle_path, s3_dir=config.output_dir, s3_key_path=config.ssec)
+        elif urlparse(config.output_dir).scheme == 'file':
+            copy_files(file_paths=[wiggle_path], output_dir=urlparse(config.output_dir).path)
         else:
             copy_files(file_paths=[wiggle_path], output_dir=config.output_dir)
     else:
@@ -183,7 +187,9 @@ def rsem_quantification(job, config, star_output):
         job.fileStore.readGlobalFile(sorted_id, bam_path)
         if urlparse(config.output_dir).scheme == 's3' and config.ssec:
             s3am_upload(fpath=bam_path, s3_dir=config.output_dir, s3_key_path=config.ssec)
-        elif urlparse(config.output_dir).scheme != 's3':
+        elif urlparse(config.output_dir).scheme == 'file':
+            copy_files(file_paths=[bam_path], output_dir=urlparse(config.output_dir).path)
+        else:
             copy_files(file_paths=[bam_path], output_dir=config.output_dir)
     # Declare RSEM and RSEM post-process jobs
     disk = 5 * transcriptome_id.size
@@ -339,10 +345,21 @@ def consolidate_output(job, config, kallisto_output, rsem_star_output, fastqc_ou
     if urlparse(config.output_dir).scheme == 's3':
         job.fileStore.logToMaster('Uploading {} to S3: {}'.format(config.uuid, config.output_dir))
         s3am_upload(fpath=out_tar, s3_dir=config.output_dir, num_cores=config.cores)
+    elif urlparse(config.output_dir).scheme == 'file':
+        copy_files(file_paths=[out_tar], output_dir=urlparse(config.output_dir).path)
     else:
+        fileContents = os.listdir(work_dir)
         job.fileStore.logToMaster('Moving {} to output dir: {}'.format(config.uuid, config.output_dir))
+        job.fileStore.logToMaster('The content of workdir:')
+        job.fileStore.logToMaster("\n".join(fileContents))
         mkdir_p(config.output_dir)
-        copy_files(file_paths=[os.path.join(work_dir, config.uuid + '.tar.gz')], output_dir=config.output_dir)
+        job.fileStore.logToMaster('out_tar: %s' % out_tar)
+        dest = os.path.join(config.output_dir, os.path.basename(out_tar))
+        try:
+            shutil.copy(out_tar, dest)
+        except OSError as err:
+            job.fileStore.logToMaster("OS error: {0}".format(err))
+        copy_files(file_paths=[out_tar], output_dir=config.output_dir)
 
 
 # Pipeline specific functions
