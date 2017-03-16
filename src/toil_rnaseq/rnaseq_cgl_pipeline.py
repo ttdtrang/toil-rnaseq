@@ -104,10 +104,11 @@ def pipeline_declaration(job, config, preprocessing_output):
         disk = 2 * r1_id.size
     if config.fastqc:
         job.fileStore.logToMaster('Queueing FastQC job for: ')
-        fastqc_output = job.addChildJobFn(run_fastqc, r1_id, r2_id, cores=2, disk=disk).rv()
+        fastqc_output = job.addChildJobFn(run_fastqc, r1_id, r2_id, appExec=config.fastqc_exec,
+                                          cores=2, disk=disk).rv()
     if config.kallisto_index:
         job.fileStore.logToMaster('Queueing Kallisto job for: ' + config.uuid)
-        kallisto_output = job.addChildJobFn(run_kallisto, r1_id, r2_id, config.kallisto_index,
+        kallisto_output = job.addChildJobFn(run_kallisto, r1_id, r2_id, config.kallisto_index, appExec=config.kallisto_exec,
                                             cores=config.cores, disk=disk).rv()
     if config.star_index and config.rsem_ref:
         job.fileStore.logToMaster('Queueing STAR alignment for: ' + config.uuid)
@@ -130,7 +131,8 @@ def star_alignment(job, config, r1_id, r2_id=None):
     mem = '2G' if config.ci_test else '40G'
     disk = '2G' if config.ci_test else r1_id.size + (0 if r2_id is None else r2_id.size) + 80530636800  # 75 G for STAR index and tmp files
     star = job.addChildJobFn(run_star, r1_id, r2_id, star_index_url=config.star_index,
-                             wiggle=config.wiggle, cores=config.cores, memory=mem, disk=disk).rv()
+                             wiggle=config.wiggle, appExec=config.star_exec,
+                             cores=config.cores, memory=mem, disk=disk).rv()
     rsem = job.addFollowOnJobFn(rsem_quantification, config, star, disk=disk).rv()
     if config.bamqc:
         return rsem, job.addFollowOnJobFn(bam_qc, config, star, disk=disk).rv()
@@ -194,6 +196,7 @@ def rsem_quantification(job, config, star_output):
     # Declare RSEM and RSEM post-process jobs
     disk = 5 * transcriptome_id.size
     rsem_output = job.wrapJobFn(run_rsem, transcriptome_id, config.rsem_ref, paired=config.paired,
+                                appExec=config.rsem_exec,
                                 cores=cores, disk=disk)
     rsem_postprocess = job.wrapJobFn(run_rsem_postprocess, rsem_output.rv(0), rsem_output.rv(1))
     job.addChild(rsem_output)
@@ -588,8 +591,8 @@ def main():
         config = argparse.Namespace(**parsed_config)
         config.maxCores = int(args.maxCores) if args.maxCores else sys.maxint
         # Config sanity checks
-        require(config.kallisto_index or config.star_index,
-                'URLs not provided for Kallisto or STAR, so there is nothing to do!')
+        require(config.kallisto_index or config.star_index or config.fastqc,
+                'URLs not provided for Kallisto or STAR, and fastqc set to False, so there is nothing to do!')
         if config.star_index or config.rsem_ref:
             require(config.star_index and config.rsem_ref, 'Input provided for STAR or RSEM but not both. STAR: '
                                                            '{}, RSEM: {}'.format(config.star_index, config.rsem_ref))
