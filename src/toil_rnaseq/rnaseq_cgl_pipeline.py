@@ -454,6 +454,9 @@ def generate_config():
         # Optional: If true, will run FastQC and include QC in sample output
         fastqc: true
 
+        # Optional: The local executable of fastqc. If not specified, docker image will be used
+        fastqc_exec: fastqc
+
         # Optional: If true, will run BAM QC (as specified by California Kid's Cancer Comparison)
         bamqc:
 
@@ -634,8 +637,11 @@ def main():
             if not config.output_dir.endswith('/'):
                 config.output_dir += '/'
             # Program checks
+
             for program in ['curl']:
                 require(next(which(program), None), program + ' must be installed on every node.'.format(program))
+            if not (config.star_exec and config.kallisto_exec and config.rsem_quantifier and config.fastqc_exec):
+                require(next(which('docker'), None), program + ' must be installed on every node.'.format(program))
 
             # Start the workflow, calling map_job() to run the pipeline for each sample
             with Toil(args) as toil:
