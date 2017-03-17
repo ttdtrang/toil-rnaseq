@@ -576,6 +576,9 @@ def main():
         generate_file(os.path.join(cwd, 'config-toil-rnaseq.yaml'), generate_config)
     if args.command == 'generate-manifest' or args.command == 'generate':
         generate_file(os.path.join(cwd, 'manifest-toil-rnaseq.tsv'), generate_manifest)
+    if args.restart:
+        with Toil(args) as toil:
+            toil.restart()
     # Pipeline execution
     elif args.command == 'run':
         require(os.path.exists(args.config), '{} not found. Please run '
@@ -603,7 +606,7 @@ def main():
         if not config.output_dir.endswith('/'):
             config.output_dir += '/'
         # Program checks
-        for program in ['curl', 'docker']:
+        for program in ['curl']:
             require(next(which(program), None), program + ' must be installed on every node.'.format(program))
 
         # Start the workflow, calling map_job() to run the pipeline for each sample
