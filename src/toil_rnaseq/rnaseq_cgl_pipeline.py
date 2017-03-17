@@ -197,6 +197,7 @@ def rsem_quantification(job, config, star_output):
     disk = 5 * transcriptome_id.size
     rsem_output = job.wrapJobFn(run_rsem, transcriptome_id, config.rsem_ref, paired=config.paired,
                                 appExec=config.rsem_quantifier,
+                                postprocess=config.rsem_postprocess,
                                 cores=cores, disk=disk)
     job.addChild(rsem_output)
     rsem_postprocess = None
@@ -315,14 +316,21 @@ def consolidate_output(job, config, kallisto_output, rsem_star_output, fastqc_ou
     rsem_tar, hugo_tar, kallisto_tar, fastqc_tar, bamqc_tar, star_tar = None, None, None, None, None, None
     if rsem_star_output:
         if config.bamqc:
-            rsem_id, hugo_id, star_id, fail_flag, bamqc_id = flatten(rsem_star_output)
+            if config.rsem_postprocess:
+                rsem_id, hugo_id, star_id, fail_flag, bamqc_id = flatten(rsem_star_output)
+            else:
+                rsem_id, star_id, fail_flag, bamqc_id = flatten(rsem_star_output)
             bamqc_tar = job.fileStore.readGlobalFile(bamqc_id, os.path.join(work_dir, 'bamqc.tar.gz'))
             config.uuid = 'FAIL.' + config.uuid if fail_flag else config.uuid
         else:
-            rsem_id, hugo_id, star_id = flatten(rsem_star_output)
+            if config.rsem_postprocess:
+                rsem_id, hugo_id, star_id = flatten(rsem_star_output)
+            else:
+                rsem_id, star_id = flatten(rsem_star_output)
         rsem_tar = job.fileStore.readGlobalFile(rsem_id, os.path.join(work_dir, 'rsem.tar.gz'))
-        hugo_tar = job.fileStore.readGlobalFile(hugo_id, os.path.join(work_dir, 'rsem_hugo.tar.gz'))
         star_tar = job.fileStore.readGlobalFile(star_id, os.path.join(work_dir, 'star.tar.gz'))
+        if config.rsem_postprocess:
+            hugo_tar = job.fileStore.readGlobalFile(hugo_id, os.path.join(work_dir, 'rsem_hugo.tar.gz'))
     if kallisto_output:
         kallisto_tar = job.fileStore.readGlobalFile(kallisto_output, os.path.join(work_dir, 'kallisto.tar.gz'))
     if fastqc_output:
@@ -598,39 +606,40 @@ def main():
         if args.restart:
             with Toil(args) as toil:
                 toil.restart()
-        require(os.path.exists(args.config), '{} not found. Please run '
-                                             '"toil-rnaseq generate-config"'.format(args.config))
-        if not args.samples:
-            require(os.path.exists(args.manifest), '{} not found and no samples provided. Please '
-                                                   'run "toil-rnaseq generate-manifest"'.format(args.manifest))
-            samples = parse_samples(path_to_manifest=args.manifest)
         else:
-            samples = parse_samples(sample_urls=args.samples)
+            require(os.path.exists(args.config), '{} not found. Please run '
+                                             '"toil-rnaseq generate-config"'.format(args.config))
+            if not args.samples:
+                require(os.path.exists(args.manifest), '{} not found and no samples provided. Please '
+                                                       'run "toil-rnaseq generate-manifest"'.format(args.manifest))
+                samples = parse_samples(path_to_manifest=args.manifest)
+            else:
+                samples = parse_samples(sample_urls=args.samples)
 
 
-        # Parse config
-        parsed_config = {x.replace('-', '_'): y for x, y in yaml.load(open(args.config).read()).iteritems()}
-        config = argparse.Namespace(**parsed_config)
-        config.maxCores = int(args.maxCores) if args.maxCores else sys.maxint
-        # Config sanity checks
-        require(config.kallisto_index or config.star_index or config.fastqc,
-                'URLs not provided for Kallisto or STAR, and fastqc set to False, so there is nothing to do!')
-        if config.star_index or config.rsem_ref:
-            require(config.star_index and config.rsem_ref, 'Input provided for STAR or RSEM but not both. STAR: '
-                                                           '{}, RSEM: {}'.format(config.star_index, config.rsem_ref))
-        require(config.output_dir, 'No output location specified: {}'.format(config.output_dir))
-        for input in [x for x in [config.kallisto_index, config.star_index, config.rsem_ref] if x]:
-            require(urlparse(input).scheme in schemes,
-                    'Input in config must have the appropriate URL prefix: {}'.format(schemes))
-        if not config.output_dir.endswith('/'):
-            config.output_dir += '/'
-        # Program checks
-        for program in ['curl']:
-            require(next(which(program), None), program + ' must be installed on every node.'.format(program))
+            # Parse config
+            parsed_config = {x.replace('-', '_'): y for x, y in yaml.load(open(args.config).read()).iteritems()}
+            config = argparse.Namespace(**parsed_config)
+            config.maxCores = int(args.maxCores) if args.maxCores else sys.maxint
+            # Config sanity checks
+            require(config.kallisto_index or config.star_index or config.fastqc,
+                    'URLs not provided for Kallisto or STAR, and fastqc set to False, so there is nothing to do!')
+            if config.star_index or config.rsem_ref:
+                require(config.star_index and config.rsem_ref, 'Input provided for STAR or RSEM but not both. STAR: '
+                                                               '{}, RSEM: {}'.format(config.star_index, config.rsem_ref))
+            require(config.output_dir, 'No output location specified: {}'.format(config.output_dir))
+            for input in [x for x in [config.kallisto_index, config.star_index, config.rsem_ref] if x]:
+                require(urlparse(input).scheme in schemes,
+                        'Input in config must have the appropriate URL prefix: {}'.format(schemes))
+            if not config.output_dir.endswith('/'):
+                config.output_dir += '/'
+            # Program checks
+            for program in ['curl']:
+                require(next(which(program), None), program + ' must be installed on every node.'.format(program))
 
-        # Start the workflow, calling map_job() to run the pipeline for each sample
-        with Toil(args) as toil:
-            toil.start(Job.wrapJobFn(map_job, download_sample, samples, config))
+            # Start the workflow, calling map_job() to run the pipeline for each sample
+            with Toil(args) as toil:
+                toil.start(Job.wrapJobFn(map_job, download_sample, samples, config))
 
 
 if __name__ == '__main__':
