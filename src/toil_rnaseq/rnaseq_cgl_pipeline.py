@@ -196,11 +196,13 @@ def rsem_quantification(job, config, star_output):
     # Declare RSEM and RSEM post-process jobs
     disk = 5 * transcriptome_id.size
     rsem_output = job.wrapJobFn(run_rsem, transcriptome_id, config.rsem_ref, paired=config.paired,
-                                appExec=config.rsem_exec,
+                                appExec=config.rsem_quantifier,
                                 cores=cores, disk=disk)
-    rsem_postprocess = job.wrapJobFn(run_rsem_postprocess, rsem_output.rv(0), rsem_output.rv(1))
     job.addChild(rsem_output)
-    rsem_output.addChild(rsem_postprocess)
+    rsem_postprocess = None
+    if config.rsem_postprocess:
+        rsem_postprocess = job.wrapJobFn(run_rsem_postprocess, rsem_output.rv(0), rsem_output.rv(1))
+        rsem_output.addChild(rsem_postprocess)
     # Save STAR log and splice junction file
     log_path = os.path.join(work_dir, 'Log.final.out')
     job.fileStore.readGlobalFile(log_id, log_path)
@@ -208,7 +210,10 @@ def rsem_quantification(job, config, star_output):
     job.fileStore.readGlobalFile(sj_id, sj_path)
     tarball_files(tar_name='star.tar.gz', file_paths=[log_path, sj_path], output_dir=work_dir)
     star_id = job.fileStore.writeGlobalFile(os.path.join(work_dir, 'star.tar.gz'))
-    return rsem_postprocess.rv(), star_id
+    if config.rsem_postprocess:
+        return rsem_postprocess.rv(), star_id
+    else:
+        return rsem_output.rv(), star_id
 
 
 def process_sample(job, config, input_tar=None, fastq_ids=None):
@@ -414,11 +419,22 @@ def generate_config():
         # Required: URL {scheme} to index tarball used by STAR
         star-index: s3://cgl-pipeline-inputs/rnaseq_cgl/starIndex_hg38_no_alt.tar.gz
 
+        # Optional: The local executable of star aligner. If not specified, docker image will be used
+        star-exec: star
+
         # Required: URL {scheme} to kallisto index file.
         kallisto-index: s3://cgl-pipeline-inputs/rnaseq_cgl/kallisto_hg38.idx
+        # Optional: The local executable of kallisto. If not specified, docker image will be used
+        kallisto-exec: kallisto
 
         # Required: URL {scheme} to reference tarball used by RSEM
         rsem-ref: s3://cgl-pipeline-inputs/rnaseq_cgl/rsem_ref_hg38_no_alt.tar.gz
+
+        # Optional: The local executable of rsem quantifier. If not specified, docker image will be used
+        rsem-quantifier: rsem-calculate-expression
+
+        # Optional: If true, will post-process rsem results by mapping gene Id to gene names
+        rsem-postprocess: false
 
         # Required: Output location of sample. Can be full path to a directory or an s3:// URL
         # Warning: S3 buckets must exist prior to upload or it will fail.
