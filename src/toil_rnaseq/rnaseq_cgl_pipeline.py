@@ -592,11 +592,12 @@ def main():
         generate_file(os.path.join(cwd, 'config-toil-rnaseq.yaml'), generate_config)
     if args.command == 'generate-manifest' or args.command == 'generate':
         generate_file(os.path.join(cwd, 'manifest-toil-rnaseq.tsv'), generate_manifest)
-    if args.restart:
-        with Toil(args) as toil:
-            toil.restart()
+
     # Pipeline execution
     elif args.command == 'run':
+        if args.restart:
+            with Toil(args) as toil:
+                toil.restart()
         require(os.path.exists(args.config), '{} not found. Please run '
                                              '"toil-rnaseq generate-config"'.format(args.config))
         if not args.samples:
@@ -605,6 +606,8 @@ def main():
             samples = parse_samples(path_to_manifest=args.manifest)
         else:
             samples = parse_samples(sample_urls=args.samples)
+
+
         # Parse config
         parsed_config = {x.replace('-', '_'): y for x, y in yaml.load(open(args.config).read()).iteritems()}
         config = argparse.Namespace(**parsed_config)
