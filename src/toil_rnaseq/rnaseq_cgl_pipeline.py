@@ -293,7 +293,7 @@ def process_sample(job, config, input_tar=None, fastq_ids=None):
     # Start cutadapt step
     if config.cutadapt:
         return job.addChildJobFn(run_cutadapt, processed_r1, processed_r2, config.fwd_3pr_adapter,
-                                 config.rev_3pr_adapter, disk=disk).rv()
+                                 config.rev_3pr_adapter, appExec=config.cutadapt_exec, disk=disk).rv()
     else:
         return processed_r1, processed_r2
 
@@ -450,6 +450,7 @@ def generate_config():
 
         # Optional: If true, will preprocess samples with cutadapt using adapter sequences.
         cutadapt: true
+        cutadapt-exec:
 
         # Optional: If true, will run FastQC and include QC in sample output
         fastqc: true
