@@ -292,8 +292,12 @@ def process_sample(job, config, input_tar=None, fastq_ids=None):
         disk = 2 * processed_r1.size
     # Start cutadapt step
     if config.cutadapt:
-        return job.addChildJobFn(run_cutadapt, processed_r1, processed_r2, config.fwd_3pr_adapter,
-                                 config.rev_3pr_adapter, appExec=config.cutadapt_exec, disk=disk).rv()
+        return job.addChildJobFn(run_cutadapt, processed_r1, processed_r2,
+                                 config.fwd_3pr_adapter, config.rev_3pr_adapter,
+                                 appExec=config.cutadapt_exec,
+                                 qualityTrimming=config.cutadapt_quality_trimming,
+                                 qualityCutoff=config.cutadapt_quality_cutoffs,
+                                 disk=disk).rv()
     else:
         return processed_r1, processed_r2
 
@@ -449,14 +453,21 @@ def generate_config():
         output-dir:
 
         # Optional: If true, will preprocess samples with cutadapt using adapter sequences.
+        # The cutoff can be specified for both end simultaneously, for example
+        #   15,10     will trim 5'-end at 15 cutoff, 3'-end at 10 cutoff
+        #   10,0      will trim 5'-end at 10 cutoff, not 3'-end
+        #   10        will trim 3'-end at 10 cutoff, not 5'-end
         cutadapt: true
         cutadapt-exec:
+        cutadapt-quality-trimming: true
+        cutadapt-quality-cutoffs: 20
+
 
         # Optional: If true, will run FastQC and include QC in sample output
         fastqc: true
 
         # Optional: The local executable of fastqc. If not specified, docker image will be used
-        fastqc_exec: fastqc
+        fastqc-exec: fastqc
 
         # Optional: If true, will run BAM QC (as specified by California Kid's Cancer Comparison)
         bamqc:
